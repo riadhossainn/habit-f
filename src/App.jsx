@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase.js';
 import Dashboard from './components/Dashboard.jsx';
 import HabitList from './components/HabitList.jsx';
 import Statistics from './components/Statistics.jsx';
@@ -8,6 +9,35 @@ import LoginPage from './components/LoginPage.jsx';
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Check if user is logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginPage onLogin={setUser} />;
@@ -57,14 +87,13 @@ export default function App() {
         <div className="sidebar-footer">
           <div className="user-info">
             <div className="user-avatar">
-              {(user.name || 'U').charAt(0).toUpperCase()}
+              {(user.email || 'U').charAt(0).toUpperCase()}
             </div>
             <div className="user-details">
-              <div className="user-name">{user.name || 'User'}</div>
-              <div className="user-email">{user.email}</div>
+              <div className="user-name">{user.email}</div>
             </div>
           </div>
-          <button onClick={() => setUser(null)} className="logout-btn">
+          <button onClick={handleLogout} className="logout-btn">
             <span>🚪</span>
             Sign Out
           </button>

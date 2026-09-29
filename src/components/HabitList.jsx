@@ -1,30 +1,41 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { API_URL } from '../lib/supabase.js';
 
 const categories = ['Health', 'Fitness', 'Learning', 'Mindfulness', 'Productivity', 'Social', 'Finance', 'Other'];
 const icons = ['🧘', '📚', '💪', '💧', '📝', '📵', '🏃', '🎯', '💤', '🥗', '🎨', '🎵', '💻', '🌱', '❤️', '⭐'];
 const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b', '#10b981', '#ef4444', '#f97316'];
 const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-const initialHabits = [
-  { id: '1', user_id: '1', name: 'Morning Meditation', description: '10 minutes of mindfulness', category: 'Health', frequency: 'daily', target_days: [0,1,2,3,4,5,6], color: '#6366f1', icon: '🧘', created_at: '2024-01-01', is_active: true },
-  { id: '2', user_id: '1', name: 'Read 30 Pages', description: 'Read a book daily', category: 'Learning', frequency: 'daily', target_days: [0,1,2,3,4,5,6], color: '#8b5cf6', icon: '📚', created_at: '2024-01-05', is_active: true },
-  { id: '3', user_id: '1', name: 'Exercise', description: '30 min workout', category: 'Fitness', frequency: 'daily', target_days: [0,1,2,3,4], color: '#ec4899', icon: '💪', created_at: '2024-01-10', is_active: true },
-  { id: '4', user_id: '1', name: 'Drink Water', description: '8 glasses of water', category: 'Health', frequency: 'daily', target_days: [0,1,2,3,4,5,6], color: '#06b6d4', icon: '💧', created_at: '2024-01-15', is_active: true },
-  { id: '5', user_id: '1', name: 'Journal', description: 'Write daily reflections', category: 'Mindfulness', frequency: 'daily', target_days: [0,1,2,3,4,5,6], color: '#f59e0b', icon: '📝', created_at: '2024-02-01', is_active: true },
-  { id: '6', user_id: '1', name: 'No Social Media', description: 'Limit social media to 30min', category: 'Productivity', frequency: 'daily', target_days: [0,1,2,3,4,5], color: '#10b981', icon: '📵', created_at: '2024-02-10', is_active: true },
-];
-
 export default function HabitList({ user }) {
-  const [habits, setHabits] = useState(initialHabits);
+  const [habits, setHabits] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterCategory, setFilterCategory] = useState('All');
+  const [loading, setLoading] = useState(true);
 
   const [formData, setFormData] = useState({
     name: '', description: '', category: 'Health', frequency: 'daily',
     color: colors[0], icon: icons[0], target_days: [0,1,2,3,4,5,6],
   });
+
+  useEffect(() => {
+    fetchHabits();
+  }, [user]);
+
+  const fetchHabits = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/habits?user_id=${user.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        setHabits(data);
+      }
+    } catch (error) {
+      console.error('Error fetching habits:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredHabits = habits.filter(h => {
     const matchesSearch = h.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -47,26 +58,44 @@ export default function HabitList({ user }) {
     setShowForm(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) return;
     
-    if (editingHabit) {
-      setHabits(prev => prev.map(h => h.id === editingHabit.id ? { ...h, ...formData } : h));
-    } else {
-      const newHabit = {
-        id: Date.now().toString(),
-        user_id: user.id,
-        ...formData,
-        created_at: new Date().toISOString(),
-        is_active: true,
-      };
-      setHabits(prev => [...prev, newHabit]);
+    try {
+      if (editingHabit) {
+        await fetch(`${API_URL}/api/habits/${editingHabit.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+      } else {
+        await fetch(`${API_URL}/api/habits`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: user.id,
+            ...formData,
+          }),
+        });
+      }
+      setShowForm(false);
+      fetchHabits();
+    } catch (error) {
+      console.error('Error saving habit:', error);
     }
-    setShowForm(false);
   };
 
-  const handleDelete = (id) => {
-    setHabits(prev => prev.filter(h => h.id !== id));
+  const handleDelete = async (id) => {
+    if (!confirm('Delete this habit?')) return;
+    
+    try {
+      await fetch(`${API_URL}/api/habits/${id}`, {
+        method: 'DELETE',
+      });
+      fetchHabits();
+    } catch (error) {
+      console.error('Error deleting habit:', error);
+    }
   };
 
   const toggleDay = (day) => {
@@ -77,6 +106,10 @@ export default function HabitList({ user }) {
         : [...prev.target_days, day].sort()
     }));
   };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div>
@@ -108,37 +141,45 @@ export default function HabitList({ user }) {
         </select>
       </div>
 
-      <div className="habits-grid">
-        {filteredHabits.map((habit) => (
-          <div key={habit.id} className="habit-card">
-            <div className="habit-card-header">
-              <div className="habit-card-icon" style={{ backgroundColor: habit.color + '20' }}>
-                {habit.icon}
+      {filteredHabits.length > 0 ? (
+        <div className="habits-grid">
+          {filteredHabits.map((habit) => (
+            <div key={habit.id} className="habit-card">
+              <div className="habit-card-header">
+                <div className="habit-card-icon" style={{ backgroundColor: habit.color + '20' }}>
+                  {habit.icon}
+                </div>
+                <div className="habit-card-actions">
+                  <button onClick={() => openEditForm(habit)} className="icon-btn">✏️</button>
+                  <button onClick={() => handleDelete(habit.id)} className="icon-btn delete">🗑️</button>
+                </div>
               </div>
-              <div className="habit-card-actions">
-                <button onClick={() => openEditForm(habit)} className="icon-btn">✏️</button>
-                <button onClick={() => handleDelete(habit.id)} className="icon-btn delete">🗑️</button>
+              <h3 className="habit-card-name">{habit.name}</h3>
+              <p className="habit-card-desc">{habit.description}</p>
+              <div className="habit-card-footer">
+                <span className="category-badge">{habit.category}</span>
+                <div className="day-dots">
+                  {dayNames.map((day, i) => (
+                    <div
+                      key={i}
+                      className={`day-dot ${habit.target_days.includes(i) ? 'active' : ''}`}
+                      style={habit.target_days.includes(i) ? { backgroundColor: habit.color } : {}}
+                    >
+                      {day[0]}
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <h3 className="habit-card-name">{habit.name}</h3>
-            <p className="habit-card-desc">{habit.description}</p>
-            <div className="habit-card-footer">
-              <span className="category-badge">{habit.category}</span>
-              <div className="day-dots">
-                {dayNames.map((day, i) => (
-                  <div
-                    key={i}
-                    className={`day-dot ${habit.target_days.includes(i) ? 'active' : ''}`}
-                    style={habit.target_days.includes(i) ? { backgroundColor: habit.color } : {}}
-                  >
-                    {day[0]}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#64748b' }}>
+          <p style={{ fontSize: '48px', marginBottom: '16px' }}>🎯</p>
+          <p style={{ fontSize: '16px', marginBottom: '8px' }}>No habits yet</p>
+          <p style={{ fontSize: '14px' }}>Click "New Habit" to create your first habit</p>
+        </div>
+      )}
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
